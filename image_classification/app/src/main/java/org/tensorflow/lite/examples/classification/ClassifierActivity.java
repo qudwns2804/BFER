@@ -18,6 +18,10 @@ package org.tensorflow.lite.examples.classification;
 
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
+import android.graphics.Canvas;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.media.ImageReader.OnImageAvailableListener;
 import android.os.SystemClock;
@@ -82,6 +86,13 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
 
   @Override
   protected void processImage() {
+    Canvas canvas = new Canvas(rgbFrameBitmap);
+    Paint paint = new Paint();
+    ColorMatrix colorMatrix = new ColorMatrix();
+    colorMatrix.setSaturation(0);
+    ColorMatrixColorFilter colorMatrixFilter = new ColorMatrixColorFilter(colorMatrix);
+    paint.setColorFilter(colorMatrixFilter);
+    canvas.drawBitmap(rgbFrameBitmap, 0, 0, paint);
     rgbFrameBitmap.setPixels(getRgbBytes(), 0, previewWidth, 0, 0, previewWidth, previewHeight);
     final int cropSize = Math.min(previewWidth, previewHeight);
 
