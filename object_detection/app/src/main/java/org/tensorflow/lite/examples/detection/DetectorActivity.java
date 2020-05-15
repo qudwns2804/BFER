@@ -178,7 +178,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
           public void run() {
             LOGGER.i("Running detection on image " + currTimestamp);
             final long startTime = SystemClock.uptimeMillis();
-            final List<Classifier.Recognition> results = detector.recognizeImage(croppedBitmap);
+            final Classifier.Recognition result = detector.recognizeImage(croppedBitmap);
             lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
 
             cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
@@ -198,16 +198,14 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
             final List<Classifier.Recognition> mappedRecognitions =
                 new LinkedList<Classifier.Recognition>();
 
-            for (final Classifier.Recognition result : results) {
-              final RectF location = result.getLocation();
-              if (location != null && result.getConfidence() >= minimumConfidence) {
-                canvas.drawRect(location, paint);
+            final RectF location = result.getLocation();
+            if (location != null && result.getConfidence() >= minimumConfidence) {
+              canvas.drawRect(location, paint);
 
-                cropToFrameTransform.mapRect(location);
+              cropToFrameTransform.mapRect(location);
 
-                result.setLocation(location);
-                mappedRecognitions.add(result);
-              }
+              result.setLocation(location);
+              mappedRecognitions.add(result);
             }
 
             tracker.trackResults(mappedRecognitions, currTimestamp);

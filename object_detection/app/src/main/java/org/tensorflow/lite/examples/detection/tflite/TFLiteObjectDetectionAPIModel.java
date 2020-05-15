@@ -149,7 +149,7 @@ public class TFLiteObjectDetectionAPIModel implements Classifier {
   }
 
   @Override
-  public List<Recognition> recognizeImage(final Bitmap bitmap) {
+  public Recognition recognizeImage(final Bitmap bitmap) {
     // Log this method so that it can be analyzed with systrace.
     Trace.beginSection("recognizeImage");
 
@@ -204,26 +204,30 @@ public class TFLiteObjectDetectionAPIModel implements Classifier {
       // For example, your model's NUM_DETECTIONS = 20, but sometimes it only outputs 16 predictions
       // If you don't use the output's numDetections, you'll get nonsensical data
     int numDetectionsOutput = Math.min(NUM_DETECTIONS, (int) numDetections[0]); // cast from float to integer, use min for safety
-      
-    final ArrayList<Recognition> recognitions = new ArrayList<>(numDetectionsOutput);
+
+    float highScore = 0;
+    int point = 0;
     for (int i = 0; i < numDetectionsOutput; ++i) {
-      final RectF detection =
-          new RectF(
-              outputLocations[0][i][1] * inputSize,
-              outputLocations[0][i][0] * inputSize,
-              outputLocations[0][i][3] * inputSize,
-              outputLocations[0][i][2] * inputSize);
-      // SSD Mobilenet V1 Model assumes class 0 is background class
-      // in label file and class labels start from 1 to number_of_classes+1,
-      // while outputClasses correspond to class index from 0 to number_of_classes
-      int labelOffset = 1;
-      recognitions.add(
-          new Recognition(
-              "" + i,
-              labels.get((int) outputClasses[0][i] + labelOffset),
-              outputScores[0][i],
-              detection));
+      if(highScore<outputScores[0][i]) {
+        point = i;
+        highScore = outputScores[0][i];
+      }
     }
+    final RectF detection =
+            new RectF(
+                    outputLocations[0][point][1] * inputSize,
+                    outputLocations[0][point][0] * inputSize,
+                    outputLocations[0][point][3] * inputSize,
+                    outputLocations[0][point][2] * inputSize);
+    // SSD Mobilenet V1 Model assumes class 0 is background class
+    // in label file and class labels start from 1 to number_of_classes+1,
+    // while outputClasses correspond to class index from 0 to number_of_classes
+    int labelOffset = 1;
+    final Recognition recognitions = new Recognition(
+                    "" + point,
+                    labels.get((int) outputClasses[0][point] + labelOffset),
+                    outputScores[0][point],
+                    detection);
     Trace.endSection(); // "recognizeImage"
     return recognitions;
   }
