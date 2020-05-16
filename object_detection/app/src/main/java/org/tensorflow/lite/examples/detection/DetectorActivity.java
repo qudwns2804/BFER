@@ -20,6 +20,8 @@ import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Paint.Style;
@@ -39,6 +41,7 @@ import org.tensorflow.lite.examples.detection.env.BorderedText;
 import org.tensorflow.lite.examples.detection.env.ImageUtils;
 import org.tensorflow.lite.examples.detection.env.Logger;
 import org.tensorflow.lite.examples.detection.tflite.Classifier;
+import org.tensorflow.lite.examples.detection.tflite.Classifier2;
 import org.tensorflow.lite.examples.detection.tflite.TFLiteObjectDetectionAPIModel;
 import org.tensorflow.lite.examples.detection.tracking.MultiBoxTracker;
 
@@ -65,6 +68,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
   private Integer sensorOrientation;
 
   private Classifier detector;
+  private Classifier2 classifier;
 
   private long lastProcessingTimeMs;
   private Bitmap rgbFrameBitmap = null;
@@ -111,6 +115,12 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
               getApplicationContext(), "Classifier could not be initialized", Toast.LENGTH_SHORT);
       toast.show();
       finish();
+    }
+
+    recreateClassifier();
+    if (classifier == null) {
+      LOGGER.e("No classifier on preview!");
+      return;
     }
 
     previewWidth = size.getWidth();
@@ -206,6 +216,11 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
               result.setLocation(location);
               mappedRecognitions.add(result);
+              float left = result.getLocation().left;
+              float top = result.getLocation().top;
+              float right = result.getLocation().right;
+              float bottom = result.getLocation().bottom;
+              rgbFrameBitmap.createBitmap(rgbFrameBitmap, (int)left, (int)top, (int)(right-left), (int)(bottom-top));
             }
 
             tracker.trackResults(mappedRecognitions, currTimestamp);
@@ -213,15 +228,30 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
             computingDetection = false;
 
+            if (location != null && result.getConfidence() >= minimumConfidence && classifier != null) {
+              Canvas canvas2 = new Canvas(rgbFrameBitmap);
+              Paint paint2 = new Paint();
+              ColorMatrix colorMatrix = new ColorMatrix();
+              colorMatrix.setSaturation(0);
+              ColorMatrixColorFilter colorMatrixFilter = new ColorMatrixColorFilter(colorMatrix);
+              paint2.setColorFilter(colorMatrixFilter);
+              canvas2.drawBitmap(rgbFrameBitmap, 0, 0, paint2);
+              rgbFrameBitmap.setPixels(getRgbBytes(), 0, previewWidth, 0, 0, 224, 224);
+              final List<Classifier2.Recognition> results =
+                      classifier.recognizeImage(rgbFrameBitmap, sensorOrientation);
+              LOGGER.v("Detect: %s", results);
+
             runOnUiThread(
                 new Runnable() {
                   @Override
                   public void run() {
+                    showResultsInBottomSheet(results);
                     showFrameInfo(previewWidth + "x" + previewHeight);
                     showCropInfo(cropCopyBitmap.getWidth() + "x" + cropCopyBitmap.getHeight());
                     showInference(lastProcessingTimeMs + "ms");
                   }
                 });
+            }
           }
         });
   }
@@ -240,5 +270,18 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
   // checkpoints.
   private enum DetectorMode {
     TF_OD_API;
+  }
+
+  private void recreateClassifier() {
+    if (classifier != null) {
+      LOGGER.d("Closing classifier.");
+      classifier.close();
+      classifier = null;
+    }
+    try {
+      classifier = Classifier2.create(this, Classifier2.Model.FLOAT_MOBILENET, Classifier2.Device.GPU, 1);
+    } catch (IOException e) {
+      LOGGER.e(e, "Failed to create classifier.");
+    }
   }
 }
