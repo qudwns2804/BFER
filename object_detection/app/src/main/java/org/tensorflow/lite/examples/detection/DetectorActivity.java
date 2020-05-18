@@ -220,7 +220,12 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
               float top = result.getLocation().top;
               float right = result.getLocation().right;
               float bottom = result.getLocation().bottom;
-              rgbFrameBitmap.createBitmap(rgbFrameBitmap, (int)left, (int)top, (int)(right-left), (int)(bottom-top));
+              try {
+                rgbFrameBitmap.createBitmap(rgbFrameBitmap, (int) left, (int) top, (int) (right - left), (int) (bottom - top));
+              } catch(IllegalArgumentException e) {
+                e.printStackTrace();
+                LOGGER.e(e, "IllegalArgumentException");
+              }
             }
 
             tracker.trackResults(mappedRecognitions, currTimestamp);
