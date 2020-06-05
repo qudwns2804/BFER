@@ -1,4 +1,5 @@
 <resources>
     <string name="tfe_od_app_name">BFER</string>
     <string name="tfe_od_camera_error" translation_description="Error regarding camera support[CHAR_LIMIT=40]">This device doesn\'t support Camera2 API.</string>
+    <string name="fcm_message_url">https://fcm.googleapis.com/fcm/send</string>
 </resources>

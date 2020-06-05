@@ -17,6 +17,7 @@
 package org.tensorflow.lite.examples.detection;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
@@ -35,6 +36,8 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.ImageReader.OnImageAvailableListener;
 import android.media.MediaRecorder;
+import android.os.Handler;
+import android.os.Message;
 import android.os.SystemClock;
 import android.util.Size;
 import android.util.TypedValue;
@@ -60,11 +63,9 @@ import java.util.List;
  * An activity that uses a TensorFlowMultiBoxDetector and ObjectTracker to detect and then track
  * objects.
  */
-public class DetectorActivity extends CameraActivity implements OnImageAvailableListener, SensorEventListener {
-    private int total_count = 0;
-    private int crying_count = 0;
+public class DetectorActivity extends CameraActivity implements OnImageAvailableListener {
+    public final static int REPEAT_DELAY = 10000;
     private static final Logger LOGGER = new Logger();
-
     // Configuration values for the prepackaged SSD model.
     private static final int TF_OD_API_INPUT_SIZE = 512;
     private static final boolean TF_OD_API_IS_QUANTIZED = false;
@@ -77,34 +78,46 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
     private static final boolean SAVE_PREVIEW_BITMAP = false;
     private static final float TEXT_SIZE_DIP = 10;
+    public static double REFERENCE = 0.00002;
     OverlayView trackingOverlay;
+    private int total_count = 0;
+    private int crying_count = 0;
+    @SuppressLint("HandlerLeak")
+    public Handler handler = new Handler() {
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
+            LOGGER.d("Total Count : " + total_count);
+            LOGGER.d("Crying Count : " + crying_count);
+            if (total_count != 0 && total_count > 20) {
+                if (total_count - 1 <= crying_count) {
+                    pushAll("BFER", "Baby is Crying!!");
+                }
+                total_count = 0;
+                crying_count = 0;
+            }
+            this.sendEmptyMessageDelayed(0, REPEAT_DELAY);        // REPEAT_DELAY 간격으로 계속해서 반복하게 만들어준다
+        }
+    };
+    private int not_count = 0;
     private Integer sensorOrientation;
-
     private Classifier detector;
     private Classifier2 classifier;
-
     private long lastProcessingTimeMs;
     private Bitmap rgbFrameBitmap = null;
     private Bitmap croppedBitmap = null;
     private Bitmap cropCopyBitmap = null;
-
+    private boolean chk = true;
     private boolean computingDetection = false;
-
     private long timestamp = 0;
-
     private Matrix frameToCropTransform;
     private Matrix cropToFrameTransform;
-
     private MultiBoxTracker tracker;
-
     private BorderedText borderedText;
-
     private float sensorValue;
-    private AudioRecord ar = null;
-    private int minSize;
 
     @Override
     public void onPreviewSizeChosen(final Size size, final int rotation) {
+        handler.sendEmptyMessage(0);
         final float textSizePx =
                 TypedValue.applyDimension(
                         TypedValue.COMPLEX_UNIT_DIP, TEXT_SIZE_DIP, getResources().getDisplayMetrics());
@@ -206,7 +219,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                         LOGGER.i("Running detection on image " + currTimestamp);
                         final long startTime = SystemClock.uptimeMillis();
                         final Classifier.Recognition result = detector.recognizeImage(croppedBitmap);
-                        lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
 
                         cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
                         final Canvas canvas = new Canvas(cropCopyBitmap);
@@ -262,28 +274,34 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                             final List<Classifier2.Recognition> results =
                                     classifier.recognizeImage(rgbFrameBitmap, sensorOrientation);
                             LOGGER.v("Detect: %s", results);
-                            s = results.get(0).toString();
-                            check = s.charAt(1);
 
-                            if(check == 'c'){
+                            not_count = 0;
+                            if (results.get(0).toString().contains("Cry")) {
                                 crying_count++;
                                 total_count++;
-                            }
-                            else{
+                            } else {
                                 total_count++;
                             }
 
-                            if(total_count == 50 && crying_count >= 40){
-                                //push
-                                System.out.println("pushpushpushpush");
-                                total_count = 0;
-                                crying_count = 0;
-                            }
-                            else if(total_count == 50 && crying_count < 40){
-                                System.out.println("초기화되었습니다.");
-                                total_count = 0;
-                                crying_count = 0;
-                            }
+//                            if(total_count == 50 && crying_count >= 40){
+//                                //push
+//                                LOGGER.d("FCM Crying Push");
+//                                pushAll("BFER", "Baby is Crying!!");
+//                                total_count = 0;
+//                                crying_count = 0;
+//                            }
+//                            else if(total_count == 50 && crying_count < 40){
+//                                LOGGER.d("Not Crying count reset");
+//                                total_count = 0;
+//                                crying_count = 0;
+//                            }
+//                            if (results.get(0).getTitle().contains("Cry") && chk) {
+//                                chk = false;
+//                                deviceList();
+//                                pushAll("TEST", "Test");
+//                            }
+                            lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
+                            LOGGER.d("Processing Time : " + lastProcessingTimeMs);
 
                             runOnUiThread(
                                     new Runnable() {
@@ -295,27 +313,30 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                                             showInference(lastProcessingTimeMs + "ms");
                                         }
                                     });
-                        }
-                        else{//디텍팅이 안됐을 경우
-                            if(sensorValue <= 20){
+                        } else {//디텍팅이 안됐을 경우
+                            LOGGER.d("Can't Detecting face, Sensor value : " + sensorValue);
+                            if (sensorValue <= 20) {
                                 double db = getNoiseLevel();
                                 //80데시벨 보다 높은 값이 측정 됐을 때
-                                if(db >= 80)
-                                {
-                                    System.out.println("80데시벨이상 감지");
+                                if (db >= 80) {
+                                    LOGGER.d("Noise >= 80db");
+                                    pushAll("BFER", "Noise appeared!!");
                                 }
-                            }
-                            else{
+                            } else {
                                 //뒷통수 및 얼굴감지 안된 거 푸쉬
-                                System.out.println("뒷통수뒷통수뒷통수");
+                                not_count++;
+                                LOGGER.d("Not Count : " + not_count);
+                                if (not_count > 10) {
+                                    pushAll("BFER", "Can't find face");
+                                    not_count = 0;
+                                }
                             }
                         }
                     }
                 });
     }
 
-
-    public double getNoiseLevel(){
+    public double getNoiseLevel() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
         }

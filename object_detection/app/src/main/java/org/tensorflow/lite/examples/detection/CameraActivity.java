@@ -52,6 +52,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -69,13 +70,28 @@ import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.GoogleAuthProvider;
+import com.google.firebase.firestore.DocumentReference;
+import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.EventListener;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.iid.FirebaseInstanceId;
+import com.google.firebase.iid.InstanceIdResult;
 
+import org.json.JSONObject;
 import org.tensorflow.lite.examples.detection.env.ImageUtils;
 import org.tensorflow.lite.examples.detection.env.Logger;
 import org.tensorflow.lite.examples.detection.tflite.Classifier2;
 
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public abstract class CameraActivity extends AppCompatActivity
         implements OnImageAvailableListener,
@@ -87,7 +103,12 @@ public abstract class CameraActivity extends AppCompatActivity
     private static final Logger LOGGER = new Logger();
     private static final int PERMISSIONS_REQUEST = 1;
     private static final String PERMISSION_CAMERA = Manifest.permission.CAMERA;
+    protected String FCM_MESSAGE_URL = null;
+    protected String SERVER_KEY = null;
     protected FirebaseAuth mAuth = null;
+    protected FirebaseFirestore db = null;
+    protected String id = null;
+    protected Map<String, Object> deviceMap = null;
     protected GoogleSignInClient mGoogleSignInClient;
     protected int previewWidth = 0;
     protected int previewHeight = 0;
@@ -106,6 +127,7 @@ public abstract class CameraActivity extends AppCompatActivity
             cropValueTextView,
             inferenceTimeTextView;
     protected ImageView bottomSheetArrowImageView;
+    protected String token = null;
     private boolean debug = false;
     private Handler handler;
     private HandlerThread handlerThread;
@@ -138,6 +160,11 @@ public abstract class CameraActivity extends AppCompatActivity
 
         setContentView(R.layout.tfe_od_activity_camera);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        deviceMap = new HashMap<>();
+        FCM_MESSAGE_URL = getString(R.string.fcm_message_url);
+        SERVER_KEY = getString(R.string.server_key);
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
 
         if (hasPermission()) {
             setFragment();
@@ -212,15 +239,19 @@ public abstract class CameraActivity extends AppCompatActivity
         btn_logout = findViewById(R.id.btn_logout);
 
         mAuth = FirebaseAuth.getInstance();
+        db = FirebaseFirestore.getInstance();
         if (mAuth.getCurrentUser() != null) {
             ll_result.setVisibility(View.VISIBLE);
             rl_signIn.setVisibility(View.GONE);
             ll_email.setVisibility(View.VISIBLE);
-            tv_email.setText(mAuth.getCurrentUser().getEmail());
+            id = mAuth.getCurrentUser().getEmail();
+            tv_email.setText(id);
+            getToken();
         } else {
             ll_result.setVisibility(View.GONE);
             rl_signIn.setVisibility(View.VISIBLE);
             ll_email.setVisibility(View.GONE);
+            token = null;
         }
 
         btn_signIn.setOnClickListener(view -> signIn());
@@ -246,7 +277,25 @@ public abstract class CameraActivity extends AppCompatActivity
     protected void logOut() {
         LOGGER.d("SignOut");
         FirebaseAuth.getInstance().signOut();
+        token = null;
         updateUI(null);
+    }
+
+    protected void getToken() {
+        FirebaseInstanceId.getInstance().getInstanceId().addOnCompleteListener(new OnCompleteListener<InstanceIdResult>() {
+            @Override
+            public void onComplete(@NonNull Task<InstanceIdResult> task) {
+                if (!task.isSuccessful()) {
+                    LOGGER.w("FCM getInstanceID Failed" + task.getException());
+                    return;
+                }
+                id = id.substring(0, id.indexOf("@"));
+                token = task.getResult().getToken();
+                LOGGER.d("ID : " + id);
+                LOGGER.d("FCM Token : " + token);
+                deviceList();
+            }
+        });
     }
 
     @Override
@@ -290,13 +339,88 @@ public abstract class CameraActivity extends AppCompatActivity
                 });
     }
 
+    protected void deviceList() {
+        DocumentReference docRef = db.collection("users").document(id);
+        docRef.get().addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
+            @Override
+            public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+                if (task.isSuccessful()) {
+                    DocumentSnapshot document = task.getResult();
+                    if (document.exists()) {
+                        deviceMap = document.getData();
+                        LOGGER.d("FireStore Document : " + deviceMap);
+                        if (!deviceMap.containsKey(token)) {
+                            deviceMap.put(token, true);
+                            db.collection("users").document(id).set(deviceMap);
+                        }
+                    } else {
+                        LOGGER.d("FireStore : Not exists Document");
+                        deviceMap.put(token, true);
+                        LOGGER.d("FireStore Document : " + deviceMap);
+                        db.collection("users").document(id).set(deviceMap);
+                    }
+                }
+            }
+        });
+    }
+
+
+    protected void sendPostToFCM(final String token, final String title, final String message) {
+        db.collection("users")
+                .document(id).addSnapshotListener(new EventListener<DocumentSnapshot>() {
+            @Override
+            public void onEvent(@Nullable DocumentSnapshot documentSnapshot, @Nullable FirebaseFirestoreException e) {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            // FMC 메시지 생성 start
+                            JSONObject root = new JSONObject();
+                            JSONObject notification = new JSONObject();
+                            notification.put("body", message);
+                            notification.put("title", title);
+                            root.put("notification", notification);
+                            root.put("to", token);
+                            // FMC 메시지 생성 end
+
+                            URL Url = new URL(FCM_MESSAGE_URL);
+                            HttpURLConnection conn = (HttpURLConnection) Url.openConnection();
+                            conn.setRequestMethod("POST");
+                            conn.setDoOutput(true);
+                            conn.setDoInput(true);
+                            conn.addRequestProperty("Authorization", "key=" + SERVER_KEY);
+                            conn.setRequestProperty("Accept", "application/json");
+                            conn.setRequestProperty("Content-type", "application/json");
+                            OutputStream os = conn.getOutputStream();
+                            os.write(root.toString().getBytes(StandardCharsets.UTF_8));
+                            os.flush();
+                            conn.getResponseCode();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }).start();
+            }
+        });
+    }
+
+    protected void pushAll(final String title, final String message) {
+        Set<String> keys = deviceMap.keySet();
+        for (String key : keys) {
+            LOGGER.d("FCM TOKEN : " + key);
+            sendPostToFCM(key, title, message);
+        }
+    }
+
     protected void updateUI(FirebaseUser user) { //update ui code here
         LOGGER.d("User = " + user);
         if (user != null) {
             ll_result.setVisibility(View.VISIBLE);
             rl_signIn.setVisibility(View.GONE);
             ll_email.setVisibility(View.VISIBLE);
-            tv_email.setText(mAuth.getCurrentUser().getEmail());
+            id = mAuth.getCurrentUser().getEmail();
+            tv_email.setText(id);
+            getToken();
         } else {
             ll_result.setVisibility(View.GONE);
             rl_signIn.setVisibility(View.VISIBLE);
