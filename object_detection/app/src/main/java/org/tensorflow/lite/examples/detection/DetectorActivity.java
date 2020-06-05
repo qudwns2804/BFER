@@ -16,6 +16,8 @@
 
 package org.tensorflow.lite.examples.detection;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
 import android.graphics.Canvas;
@@ -27,11 +29,21 @@ import android.graphics.Paint;
 import android.graphics.Paint.Style;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
 import android.media.ImageReader.OnImageAvailableListener;
+import android.media.MediaRecorder;
 import android.os.SystemClock;
+import android.util.Log;
 import android.util.Size;
 import android.util.TypedValue;
 import android.widget.Toast;
+
+import androidx.core.app.ActivityCompat;
 
 import org.tensorflow.lite.examples.detection.customview.OverlayView;
 import org.tensorflow.lite.examples.detection.customview.OverlayView.DrawCallback;
@@ -51,7 +63,17 @@ import java.util.List;
  * An activity that uses a TensorFlowMultiBoxDetector and ObjectTracker to detect and then track
  * objects.
  */
-public class DetectorActivity extends CameraActivity implements OnImageAvailableListener {
+public class DetectorActivity extends CameraActivity implements OnImageAvailableListener, SensorEventListener {
+    private final String TAG = "NoiseRecoder";
+    public static double REFERENCE = 0.00002;
+    private SensorManager sm;
+    private Sensor lightsensor;
+    private String light="";
+    private String s;
+    private char check;
+    private LinkedList pitches = new LinkedList();
+    private int total_count = 0;
+    private int crying_count = 0;
     private static final Logger LOGGER = new Logger();
 
     // Configuration values for the prepackaged SSD model.
@@ -87,6 +109,10 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private MultiBoxTracker tracker;
 
     private BorderedText borderedText;
+
+    private float sensorValue;
+    private AudioRecord ar = null;
+    private int minSize;
 
     @Override
     public void onPreviewSizeChosen(final Size size, final int rotation) {
@@ -247,6 +273,28 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                             final List<Classifier2.Recognition> results =
                                     classifier.recognizeImage(rgbFrameBitmap, sensorOrientation);
                             LOGGER.v("Detect: %s", results);
+                            s = results.get(0).toString();
+                            check = s.charAt(1);
+
+                            if(check == 'c'){
+                                crying_count++;
+                                total_count++;
+                            }
+                            else{
+                                total_count++;
+                            }
+
+                            if(total_count == 50 && crying_count >= 40){
+                                //push
+                                System.out.println("pushpushpushpush");
+                                total_count = 0;
+                                crying_count = 0;
+                            }
+                            else if(total_count == 50 && crying_count < 40){
+                                System.out.println("초기화되었습니다.");
+                                total_count = 0;
+                                crying_count = 0;
+                            }
 
                             runOnUiThread(
                                     new Runnable() {
@@ -259,8 +307,77 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                                         }
                                     });
                         }
+                        else{//디텍팅이 안됐을 경우
+                            if(sensorValue <= 20){
+                                double db = getNoiseLevel();
+                                //80데시벨 보다 높은 값이 측정 됐을 때
+                                if(db >= 80)
+                                {
+                                    System.out.println("80데시벨이상 감지");
+                                }
+                            }
+                            else{
+                                //뒷통수 및 얼굴감지 안된 거 푸쉬
+                                System.out.println("뒷통수뒷통수뒷통수");
+                            }
+                        }
                     }
                 });
+    }
+
+
+    public double getNoiseLevel(){
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+        }
+
+        Log.e(TAG, "start new recording process");
+        int bufferSize = AudioRecord.getMinBufferSize(44100, AudioFormat.CHANNEL_IN_DEFAULT,AudioFormat.ENCODING_PCM_16BIT);
+
+        bufferSize=bufferSize*4;
+        AudioRecord recorder = new AudioRecord(MediaRecorder.AudioSource.MIC,
+                44100, AudioFormat.CHANNEL_IN_DEFAULT, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
+
+        short data [] = new short[bufferSize];
+        double average = 0.0;
+        recorder.startRecording();
+        //recording data;
+        recorder.read(data, 0, bufferSize);
+
+        recorder.stop();
+        Log.e(TAG, "stop");
+        for (short s : data)
+        {
+            if(s>0)
+            {
+                average += Math.abs(s);
+            }
+            else
+            {
+                bufferSize--;
+            }
+        }
+        //x=max;
+        double x = average/bufferSize;
+        Log.e(TAG, ""+x);
+        recorder.release();
+        Log.d(TAG, "getNoiseLevel() ");
+        double db=0;
+        if (x==0){
+            Log.e(TAG,"error x=0");
+            return db;
+        }
+        // calculating the pascal pressure based on the idea that the max amplitude (between 0 and 32767) is
+        // relative to the pressure
+        double pressure = x/51805.5336; //the value 51805.5336 can be derived from asuming that x=32767=0.6325 Pa and x=1 = 0.00002 Pa (the reference value)
+        Log.d(TAG, "x="+pressure +" Pa");
+        db = (20 * Math.log10(pressure/REFERENCE));
+        Log.d(TAG, "db="+db);
+        if(db>0)
+        {
+            Log.e(TAG,"error x=0");
+        }
+        return db;
     }
 
     @Override
@@ -284,6 +401,18 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         } catch (IOException e) {
             LOGGER.e(e, "Failed to create classifier.");
         }
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if(event.sensor.getType() == Sensor.TYPE_LIGHT){
+            sensorValue = event.values[0];
+        }
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+
     }
 
     // Which detection model to use: by default uses Tensorflow Object Detection API frozen
