@@ -308,15 +308,22 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                                         @Override
                                         public void run() {
                                             showResultsInBottomSheet(results);
-                                            showFrameInfo(previewWidth + "x" + previewHeight);
-                                            showCropInfo(cropCopyBitmap.getWidth() + "x" + cropCopyBitmap.getHeight());
                                             showInference(lastProcessingTimeMs + "ms");
+                                            showDB("-dB");
                                         }
                                     });
                         } else {//디텍팅이 안됐을 경우
                             LOGGER.d("Can't Detecting face, Sensor value : " + sensorValue);
                             if (sensorValue <= 20) {
                                 double db = getNoiseLevel();
+                                runOnUiThread(
+                                        new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                showInference("-ms");
+                                                showDB((int)db + "dB");
+                                            }
+                                        });
                                 //80데시벨 보다 높은 값이 측정 됐을 때
                                 if (db >= 80) {
                                     LOGGER.d("Noise >= 80db");

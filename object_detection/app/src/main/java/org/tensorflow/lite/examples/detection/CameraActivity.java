@@ -123,9 +123,7 @@ public abstract class CameraActivity extends AppCompatActivity
     protected SignInButton btn_signIn;
     protected ImageButton btn_logout;
     protected TextView tv_email;
-    protected TextView frameValueTextView,
-            cropValueTextView,
-            inferenceTimeTextView;
+    protected TextView inferenceTimeTextView, dbTextView;
     protected ImageView bottomSheetArrowImageView;
     protected String token = null;
     private boolean debug = false;
@@ -258,9 +256,8 @@ public abstract class CameraActivity extends AppCompatActivity
 
         btn_logout.setOnClickListener(view -> logOut());
 
-        frameValueTextView = findViewById(R.id.frame_info);
-        cropValueTextView = findViewById(R.id.crop_info);
         inferenceTimeTextView = findViewById(R.id.inference_info);
+        dbTextView = findViewById(R.id.db_info);
     }
 
     protected void signIn() {
@@ -755,10 +752,15 @@ public abstract class CameraActivity extends AppCompatActivity
     @UiThread
     protected void showResultsInBottomSheet(List<Classifier2.Recognition> results) {
         if (results != null && results.size() >= 3) {
+            String title = null;
             Classifier2.Recognition recognition = results.get(0);
             if (recognition != null) {
-                if (recognition.getTitle() != null)
-                    recognitionTextView.setText(recognition.getTitle());
+                title = recognition.getTitle();
+                if (title != null && title.contains("Crying"))
+                    recognitionTextView.setText(title);
+                else if (title != null)
+                    recognitionTextView.setText("Not Crying");
+
                 if (recognition.getConfidence() != null)
                     recognitionValueTextView.setText(
                             String.format("%.2f", (100 * recognition.getConfidence())) + "%");
@@ -766,21 +768,24 @@ public abstract class CameraActivity extends AppCompatActivity
 
             Classifier2.Recognition recognition1 = results.get(1);
             if (recognition1 != null) {
-                if (recognition1.getTitle() != null)
+                title = recognition1.getTitle();
+                if (title != null && title.contains("Crying"))
                     recognition1TextView.setText(recognition1.getTitle());
+                else if (title != null)
+                    recognition1TextView.setText("Not Crying");
                 if (recognition1.getConfidence() != null)
                     recognition1ValueTextView.setText(
                             String.format("%.2f", (100 * recognition1.getConfidence())) + "%");
             }
 
-            Classifier2.Recognition recognition2 = results.get(2);
-            if (recognition2 != null) {
-                if (recognition2.getTitle() != null)
-                    recognition2TextView.setText(recognition2.getTitle());
-                if (recognition2.getConfidence() != null)
-                    recognition2ValueTextView.setText(
-                            String.format("%.2f", (100 * recognition2.getConfidence())) + "%");
-            }
+//            Classifier2.Recognition recognition2 = results.get(2);
+//            if (recognition2 != null) {
+//                if (recognition2.getTitle() != null)
+//                    recognition2TextView.setText(recognition2.getTitle());
+//                if (recognition2.getConfidence() != null)
+//                    recognition2ValueTextView.setText(
+//                            String.format("%.2f", (100 * recognition2.getConfidence())) + "%");
+//            }
         }
     }
 
@@ -792,16 +797,12 @@ public abstract class CameraActivity extends AppCompatActivity
     public void onClick(View v) {
     }
 
-    protected void showFrameInfo(String frameInfo) {
-        frameValueTextView.setText(frameInfo);
-    }
-
-    protected void showCropInfo(String cropInfo) {
-        cropValueTextView.setText(cropInfo);
-    }
-
     protected void showInference(String inferenceTime) {
         inferenceTimeTextView.setText(inferenceTime);
+    }
+
+    protected void showDB(String db) {
+        dbTextView.setText(db);
     }
 
     protected abstract void processImage();

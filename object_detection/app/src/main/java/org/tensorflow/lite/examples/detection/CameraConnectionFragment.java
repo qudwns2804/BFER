@@ -155,33 +155,6 @@ public class CameraConnectionFragment extends Fragment {
      */
     private Handler backgroundHandler;
     /**
-     * {@link TextureView.SurfaceTextureListener} handles several lifecycle events on a {@link
-     * TextureView}.
-     */
-    private final TextureView.SurfaceTextureListener surfaceTextureListener =
-            new TextureView.SurfaceTextureListener() {
-                @Override
-                public void onSurfaceTextureAvailable(
-                        final SurfaceTexture texture, final int width, final int height) {
-                    openCamera(width, height);
-                }
-
-                @Override
-                public void onSurfaceTextureSizeChanged(
-                        final SurfaceTexture texture, final int width, final int height) {
-                    configureTransform(width, height);
-                }
-
-                @Override
-                public boolean onSurfaceTextureDestroyed(final SurfaceTexture texture) {
-                    return true;
-                }
-
-                @Override
-                public void onSurfaceTextureUpdated(final SurfaceTexture texture) {
-                }
-            };
-    /**
      * An {@link ImageReader} that handles preview frame capture.
      */
     private ImageReader previewReader;
@@ -222,6 +195,33 @@ public class CameraConnectionFragment extends Fragment {
                     if (null != activity) {
                         activity.finish();
                     }
+                }
+            };
+    /**
+     * {@link TextureView.SurfaceTextureListener} handles several lifecycle events on a {@link
+     * TextureView}.
+     */
+    private final TextureView.SurfaceTextureListener surfaceTextureListener =
+            new TextureView.SurfaceTextureListener() {
+                @Override
+                public void onSurfaceTextureAvailable(
+                        final SurfaceTexture texture, final int width, final int height) {
+                    openCamera(width, height);
+                }
+
+                @Override
+                public void onSurfaceTextureSizeChanged(
+                        final SurfaceTexture texture, final int width, final int height) {
+                    configureTransform(width, height);
+                }
+
+                @Override
+                public boolean onSurfaceTextureDestroyed(final SurfaceTexture texture) {
+                    return true;
+                }
+
+                @Override
+                public void onSurfaceTextureUpdated(final SurfaceTexture texture) {
                 }
             };
 
