@@ -31,14 +31,11 @@ import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.ImageReader.OnImageAvailableListener;
 import android.media.MediaRecorder;
 import android.os.SystemClock;
-import android.util.Log;
 import android.util.Size;
 import android.util.TypedValue;
 import android.widget.Toast;
@@ -64,14 +61,6 @@ import java.util.List;
  * objects.
  */
 public class DetectorActivity extends CameraActivity implements OnImageAvailableListener, SensorEventListener {
-    private final String TAG = "NoiseRecoder";
-    public static double REFERENCE = 0.00002;
-    private SensorManager sm;
-    private Sensor lightsensor;
-    private String light="";
-    private String s;
-    private char check;
-    private LinkedList pitches = new LinkedList();
     private int total_count = 0;
     private int crying_count = 0;
     private static final Logger LOGGER = new Logger();
@@ -331,51 +320,45 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
         }
 
-        Log.e(TAG, "start new recording process");
-        int bufferSize = AudioRecord.getMinBufferSize(44100, AudioFormat.CHANNEL_IN_DEFAULT,AudioFormat.ENCODING_PCM_16BIT);
+        LOGGER.d("Noise : start new recording process");
+        int bufferSize = AudioRecord.getMinBufferSize(44100, AudioFormat.CHANNEL_IN_DEFAULT, AudioFormat.ENCODING_PCM_16BIT);
 
-        bufferSize=bufferSize*4;
+        bufferSize = bufferSize * 4;
         AudioRecord recorder = new AudioRecord(MediaRecorder.AudioSource.MIC,
                 44100, AudioFormat.CHANNEL_IN_DEFAULT, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
 
-        short data [] = new short[bufferSize];
+        short data[] = new short[bufferSize];
         double average = 0.0;
         recorder.startRecording();
         //recording data;
         recorder.read(data, 0, bufferSize);
 
         recorder.stop();
-        Log.e(TAG, "stop");
-        for (short s : data)
-        {
-            if(s>0)
-            {
+        LOGGER.d("Noise : stop");
+        for (short s : data) {
+            if (s > 0) {
                 average += Math.abs(s);
-            }
-            else
-            {
+            } else {
                 bufferSize--;
             }
         }
         //x=max;
-        double x = average/bufferSize;
-        Log.e(TAG, ""+x);
+        double x = average / bufferSize;
+        LOGGER.d("Noisd : " + x);
         recorder.release();
-        Log.d(TAG, "getNoiseLevel() ");
-        double db=0;
-        if (x==0){
-            Log.e(TAG,"error x=0");
+        double db = 0;
+        if (x == 0) {
+            LOGGER.e("Noise : error x = 0");
             return db;
         }
         // calculating the pascal pressure based on the idea that the max amplitude (between 0 and 32767) is
         // relative to the pressure
-        double pressure = x/51805.5336; //the value 51805.5336 can be derived from asuming that x=32767=0.6325 Pa and x=1 = 0.00002 Pa (the reference value)
-        Log.d(TAG, "x="+pressure +" Pa");
-        db = (20 * Math.log10(pressure/REFERENCE));
-        Log.d(TAG, "db="+db);
-        if(db>0)
-        {
-            Log.e(TAG,"error x=0");
+        double pressure = x / 51805.5336; //the value 51805.5336 can be derived from asuming that x=32767=0.6325 Pa and x=1 = 0.00002 Pa (the reference value)
+        LOGGER.d("Noise : x=" + pressure + "pa");
+        db = (20 * Math.log10(pressure / REFERENCE));
+        LOGGER.d("Noise : db = " + db);
+        if (db > 0) {
+            LOGGER.e("Noise : error x=0");
         }
         return db;
     }
@@ -405,8 +388,9 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if(event.sensor.getType() == Sensor.TYPE_LIGHT){
+        if (event.sensor.getType() == Sensor.TYPE_LIGHT) {
             sensorValue = event.values[0];
+            LOGGER.d("SENSOR VALUE : " + sensorValue);
         }
     }
 

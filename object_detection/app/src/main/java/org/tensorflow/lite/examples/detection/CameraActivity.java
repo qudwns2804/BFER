@@ -22,6 +22,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.hardware.Camera;
+import android.hardware.Sensor;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
@@ -78,6 +81,7 @@ public abstract class CameraActivity extends AppCompatActivity
         implements OnImageAvailableListener,
         Camera.PreviewCallback,
         CompoundButton.OnCheckedChangeListener,
+        SensorEventListener,
         View.OnClickListener {
     protected static final int RC_SIGN_IN = 9001;
     private static final Logger LOGGER = new Logger();
@@ -115,6 +119,8 @@ public abstract class CameraActivity extends AppCompatActivity
     private LinearLayout bottomSheetLayout;
     private LinearLayout gestureLayout;
     private BottomSheetBehavior<LinearLayout> sheetBehavior;
+    private SensorManager sensorManager;
+    private Sensor lightSensor;
 
     private static boolean allPermissionsGranted(final int[] grantResults) {
         for (int result : grantResults) {
@@ -438,6 +444,7 @@ public abstract class CameraActivity extends AppCompatActivity
         handlerThread = new HandlerThread("inference");
         handlerThread.start();
         handler = new Handler(handlerThread.getLooper());
+        sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
     }
 
     @Override
@@ -454,6 +461,7 @@ public abstract class CameraActivity extends AppCompatActivity
         }
 
         super.onPause();
+        sensorManager.unregisterListener(this);
     }
 
     @Override
