@@ -74,6 +74,8 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private static final DetectorMode MODE = DetectorMode.TF_OD_API;
     // Minimum detection confidence to track a detection.
     private static final float MINIMUM_CONFIDENCE_TF_OD_API = 0.5f;
+    private static final float MINIMUM_LIGHT_SENSOR_VALUE = 20.0f;
+    private static final float MINIMUM_DB = 70.0f;
     private static final boolean MAINTAIN_ASPECT = false;
     private static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
     private static final boolean SAVE_PREVIEW_BITMAP = false;
@@ -314,7 +316,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                                     });
                         } else {//디텍팅이 안됐을 경우
                             LOGGER.d("Can't Detecting face, Sensor value : " + sensorValue);
-                            if (sensorValue <= 20) {
+                            if (sensorValue <= MINIMUM_LIGHT_SENSOR_VALUE) {
                                 double db = getNoiseLevel();
                                 runOnUiThread(
                                         new Runnable() {
@@ -325,8 +327,8 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                                             }
                                         });
                                 //80데시벨 보다 높은 값이 측정 됐을 때
-                                if (db >= 80) {
-                                    LOGGER.d("Noise >= 80db");
+                                if (db >= MINIMUM_DB) {
+                                    LOGGER.d("Noise >= " + MINIMUM_DB + "db");
                                     pushAll("BFER", "Noise appeared!!");
                                 }
                             } else {
