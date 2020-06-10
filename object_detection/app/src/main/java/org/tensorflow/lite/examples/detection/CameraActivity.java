@@ -767,25 +767,24 @@ public abstract class CameraActivity extends AppCompatActivity
             }
 
             Classifier2.Recognition recognition1 = results.get(1);
-            if (recognition1 != null) {
+            Classifier2.Recognition recognition2 = results.get(2);
+            if (recognition1 != null && recognition2 != null) {
                 title = recognition1.getTitle();
                 if (title != null && title.contains("Crying"))
                     recognition1TextView.setText(recognition1.getTitle());
-                else if (title != null)
+                else if (title != null && recognition.getTitle().contains("Crying")) {
                     recognition1TextView.setText("Not Crying");
-                if (recognition1.getConfidence() != null)
-                    recognition1ValueTextView.setText(
-                            String.format("%.2f", (100 * recognition1.getConfidence())) + "%");
+                    if (recognition1.getConfidence() != null)
+                        recognition1ValueTextView.setText(
+                                String.format("%.2f", (100 * recognition1.getConfidence())) + "%");
+                } else {
+                    title = recognition2.getTitle();
+                    recognition1TextView.setText(title);
+                    if (recognition2.getConfidence() != null)
+                        recognition1ValueTextView.setText(
+                                String.format("%.2f", (100 * recognition2.getConfidence())) + "%");
+                }
             }
-
-//            Classifier2.Recognition recognition2 = results.get(2);
-//            if (recognition2 != null) {
-//                if (recognition2.getTitle() != null)
-//                    recognition2TextView.setText(recognition2.getTitle());
-//                if (recognition2.getConfidence() != null)
-//                    recognition2ValueTextView.setText(
-//                            String.format("%.2f", (100 * recognition2.getConfidence())) + "%");
-//            }
         }
     }
 

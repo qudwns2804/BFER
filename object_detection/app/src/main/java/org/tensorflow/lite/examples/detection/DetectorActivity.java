@@ -285,23 +285,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                                 total_count++;
                             }
 
-//                            if(total_count == 50 && crying_count >= 40){
-//                                //push
-//                                LOGGER.d("FCM Crying Push");
-//                                pushAll("BFER", "Baby is Crying!!");
-//                                total_count = 0;
-//                                crying_count = 0;
-//                            }
-//                            else if(total_count == 50 && crying_count < 40){
-//                                LOGGER.d("Not Crying count reset");
-//                                total_count = 0;
-//                                crying_count = 0;
-//                            }
-//                            if (results.get(0).getTitle().contains("Cry") && chk) {
-//                                chk = false;
-//                                deviceList();
-//                                pushAll("TEST", "Test");
-//                            }
                             lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
                             LOGGER.d("Processing Time : " + lastProcessingTimeMs);
 
@@ -323,12 +306,12 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                                             @Override
                                             public void run() {
                                                 showInference("-ms");
-                                                showDB((int)db + "dB");
+                                                showDB((int) db + "dB");
                                             }
                                         });
                                 //80데시벨 보다 높은 값이 측정 됐을 때
                                 if (db >= MINIMUM_DB) {
-                                    LOGGER.d("Noise >= " + MINIMUM_DB + "db");
+                                    LOGGER.d("Noise >= " + MINIMUM_DB + "dB");
                                     pushAll("BFER", "Noise appeared!!");
                                 }
                             } else {
