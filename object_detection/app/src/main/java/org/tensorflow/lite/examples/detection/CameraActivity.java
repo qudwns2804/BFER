@@ -52,7 +52,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -62,21 +61,16 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.android.gms.common.SignInButton;
 import com.google.android.gms.common.api.ApiException;
-import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.firebase.auth.AuthCredential;
-import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.iid.FirebaseInstanceId;
-import com.google.firebase.iid.InstanceIdResult;
 
 import org.json.JSONObject;
 import org.tensorflow.lite.examples.detection.env.ImageUtils;
@@ -279,19 +273,16 @@ public abstract class CameraActivity extends AppCompatActivity
     }
 
     protected void getToken() {
-        FirebaseInstanceId.getInstance().getInstanceId().addOnCompleteListener(new OnCompleteListener<InstanceIdResult>() {
-            @Override
-            public void onComplete(@NonNull Task<InstanceIdResult> task) {
-                if (!task.isSuccessful()) {
-                    LOGGER.w("FCM getInstanceID Failed" + task.getException());
-                    return;
-                }
-                id = id.substring(0, id.indexOf("@"));
-                token = task.getResult().getToken();
-                LOGGER.d("ID : " + id);
-                LOGGER.d("FCM Token : " + token);
-                deviceList();
+        FirebaseInstanceId.getInstance().getInstanceId().addOnCompleteListener(task -> {
+            if (!task.isSuccessful()) {
+                LOGGER.w("FCM getInstanceID Failed" + task.getException());
+                return;
             }
+            id = id.substring(0, id.indexOf("@"));
+            token = task.getResult().getToken();
+            LOGGER.d("ID : " + id);
+            LOGGER.d("FCM Token : " + token);
+            deviceList();
         });
     }
 
@@ -319,43 +310,37 @@ public abstract class CameraActivity extends AppCompatActivity
     protected void firebaseAuthWithGoogle(GoogleSignInAccount acct) {
         AuthCredential credential = GoogleAuthProvider.getCredential(acct.getIdToken(), null);
         mAuth.signInWithCredential(credential)
-                .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
-                    @Override
-                    public void onComplete(@NonNull Task<AuthResult> task) {
-                        if (task.isSuccessful()) {
-                            // Sign in success, update UI with the signed-in user's information
-                            Toast.makeText(CameraActivity.this, "Authentication Successed.", Toast.LENGTH_SHORT).show();
-                            FirebaseUser user = mAuth.getCurrentUser();
-                            updateUI(user);
-                        } else {
-                            // If sign in fails, display a message to the user.
-                            Toast.makeText(CameraActivity.this, "Authentication Failed.", Toast.LENGTH_SHORT).show();
-                            updateUI(null);
-                        }
+                .addOnCompleteListener(this, task -> {
+                    if (task.isSuccessful()) {
+                        // Sign in success, update UI with the signed-in user's information
+                        Toast.makeText(CameraActivity.this, "Authentication Successed.", Toast.LENGTH_SHORT).show();
+                        FirebaseUser user = mAuth.getCurrentUser();
+                        updateUI(user);
+                    } else {
+                        // If sign in fails, display a message to the user.
+                        Toast.makeText(CameraActivity.this, "Authentication Failed.", Toast.LENGTH_SHORT).show();
+                        updateUI(null);
                     }
                 });
     }
 
     protected void deviceList() {
         DocumentReference docRef = db.collection("users").document(id);
-        docRef.get().addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
-            @Override
-            public void onComplete(@NonNull Task<DocumentSnapshot> task) {
-                if (task.isSuccessful()) {
-                    DocumentSnapshot document = task.getResult();
-                    if (document.exists()) {
-                        deviceMap = document.getData();
-                        LOGGER.d("FireStore Document : " + deviceMap);
-                        if (!deviceMap.containsKey(token)) {
-                            deviceMap.put(token, true);
-                            db.collection("users").document(id).set(deviceMap);
-                        }
-                    } else {
-                        LOGGER.d("FireStore : Not exists Document");
+        docRef.get().addOnCompleteListener(task -> {
+            if (task.isSuccessful()) {
+                DocumentSnapshot document = task.getResult();
+                if (document.exists()) {
+                    deviceMap = document.getData();
+                    LOGGER.d("FireStore Document : " + deviceMap);
+                    if (!deviceMap.containsKey(token)) {
                         deviceMap.put(token, true);
-                        LOGGER.d("FireStore Document : " + deviceMap);
                         db.collection("users").document(id).set(deviceMap);
                     }
+                } else {
+                    LOGGER.d("FireStore : Not exists Document");
+                    deviceMap.put(token, true);
+                    LOGGER.d("FireStore Document : " + deviceMap);
+                    db.collection("users").document(id).set(deviceMap);
                 }
             }
         });
@@ -364,41 +349,33 @@ public abstract class CameraActivity extends AppCompatActivity
 
     protected void sendPostToFCM(final String token, final String title, final String message) {
         db.collection("users")
-                .document(id).addSnapshotListener(new EventListener<DocumentSnapshot>() {
-            @Override
-            public void onEvent(@Nullable DocumentSnapshot documentSnapshot, @Nullable FirebaseFirestoreException e) {
-                new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            // FMC 메시지 생성 start
-                            JSONObject root = new JSONObject();
-                            JSONObject notification = new JSONObject();
-                            notification.put("body", message);
-                            notification.put("title", title);
-                            root.put("notification", notification);
-                            root.put("to", token);
-                            // FMC 메시지 생성 end
+                .document(id).addSnapshotListener((documentSnapshot, e) -> new Thread(() -> {
+            try {
+                // FMC 메시지 생성 start
+                JSONObject root = new JSONObject();
+                JSONObject notification = new JSONObject();
+                notification.put("body", message);
+                notification.put("title", title);
+                root.put("notification", notification);
+                root.put("to", token);
+                // FMC 메시지 생성 end
 
-                            URL Url = new URL(FCM_MESSAGE_URL);
-                            HttpURLConnection conn = (HttpURLConnection) Url.openConnection();
-                            conn.setRequestMethod("POST");
-                            conn.setDoOutput(true);
-                            conn.setDoInput(true);
-                            conn.addRequestProperty("Authorization", "key=" + SERVER_KEY);
-                            conn.setRequestProperty("Accept", "application/json");
-                            conn.setRequestProperty("Content-type", "application/json");
-                            OutputStream os = conn.getOutputStream();
-                            os.write(root.toString().getBytes(StandardCharsets.UTF_8));
-                            os.flush();
-                            conn.getResponseCode();
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }).start();
+                URL Url = new URL(FCM_MESSAGE_URL);
+                HttpURLConnection conn = (HttpURLConnection) Url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.setDoInput(true);
+                conn.addRequestProperty("Authorization", "key=" + SERVER_KEY);
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setRequestProperty("Content-type", "application/json");
+                OutputStream os = conn.getOutputStream();
+                os.write(root.toString().getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                conn.getResponseCode();
+            } catch (Exception e1) {
+                e1.printStackTrace();
             }
-        });
+        }).start());
     }
 
     protected void pushAll(final String title, final String message) {
@@ -466,21 +443,11 @@ public abstract class CameraActivity extends AppCompatActivity
         yuvBytes[0] = bytes;
         yRowStride = previewWidth;
 
-        imageConverter =
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        ImageUtils.convertYUV420SPToARGB8888(bytes, previewWidth, previewHeight, rgbBytes);
-                    }
-                };
+        imageConverter = () -> ImageUtils.convertYUV420SPToARGB8888(bytes, previewWidth, previewHeight, rgbBytes);
 
-        postInferenceCallback =
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        camera.addCallbackBuffer(bytes);
-                        isProcessingFrame = false;
-                    }
+        postInferenceCallback = () -> {
+                    camera.addCallbackBuffer(bytes);
+                    isProcessingFrame = false;
                 };
         processImage();
     }
@@ -516,30 +483,20 @@ public abstract class CameraActivity extends AppCompatActivity
             final int uvRowStride = planes[1].getRowStride();
             final int uvPixelStride = planes[1].getPixelStride();
 
-            imageConverter =
-                    new Runnable() {
-                        @Override
-                        public void run() {
-                            ImageUtils.convertYUV420ToARGB8888(
-                                    yuvBytes[0],
-                                    yuvBytes[1],
-                                    yuvBytes[2],
-                                    previewWidth,
-                                    previewHeight,
-                                    yRowStride,
-                                    uvRowStride,
-                                    uvPixelStride,
-                                    rgbBytes);
-                        }
-                    };
+            imageConverter = () -> ImageUtils.convertYUV420ToARGB8888(
+                            yuvBytes[0],
+                            yuvBytes[1],
+                            yuvBytes[2],
+                            previewWidth,
+                            previewHeight,
+                            yRowStride,
+                            uvRowStride,
+                            uvPixelStride,
+                            rgbBytes);
 
-            postInferenceCallback =
-                    new Runnable() {
-                        @Override
-                        public void run() {
-                            image.close();
-                            isProcessingFrame = false;
-                        }
+            postInferenceCallback = () -> {
+                        image.close();
+                        isProcessingFrame = false;
                     };
 
             processImage();
@@ -690,14 +647,10 @@ public abstract class CameraActivity extends AppCompatActivity
         Fragment fragment;
         if (useCamera2API) {
             CameraConnectionFragment camera2Fragment =
-                    CameraConnectionFragment.newInstance(
-                            new CameraConnectionFragment.ConnectionCallback() {
-                                @Override
-                                public void onPreviewSizeChosen(final Size size, final int rotation) {
-                                    previewHeight = size.getHeight();
-                                    previewWidth = size.getWidth();
-                                    CameraActivity.this.onPreviewSizeChosen(size, rotation);
-                                }
+                    CameraConnectionFragment.newInstance((size, rotation) -> {
+                                previewHeight = size.getHeight();
+                                previewWidth = size.getWidth();
+                                CameraActivity.this.onPreviewSizeChosen(size, rotation);
                             },
                             this,
                             getLayoutId(),

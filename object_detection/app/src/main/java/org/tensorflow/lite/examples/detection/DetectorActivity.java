@@ -52,7 +52,6 @@ import com.google.firebase.storage.UploadTask;
 
 import org.json.JSONObject;
 import org.tensorflow.lite.examples.detection.customview.OverlayView;
-import org.tensorflow.lite.examples.detection.customview.OverlayView.DrawCallback;
 import org.tensorflow.lite.examples.detection.env.BorderedText;
 import org.tensorflow.lite.examples.detection.env.ImageUtils;
 import org.tensorflow.lite.examples.detection.env.Logger;
@@ -82,7 +81,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private static final boolean TF_OD_API_IS_QUANTIZED = false;
     private static final String TF_OD_API_MODEL_FILE = "face_detect.tflite";
     private static final String TF_OD_API_LABELS_FILE = "file:///android_asset/face_label.txt";
-    private static final DetectorMode MODE = DetectorMode.TF_OD_API;
     // Minimum detection confidence to track a detection.
     private static final float MINIMUM_CONFIDENCE_TF_OD_API = 0.5f;
     private static final float MINIMUM_LIGHT_SENSOR_VALUE = 20.0f;
@@ -105,7 +103,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private Bitmap rgbFrameBitmap = null;
     private Bitmap croppedBitmap = null;
     private Bitmap cropCopyBitmap = null;
-    private boolean chk = true;
     private Bitmap storageBitmap = null;
     private Uri storageUri = null;
     private boolean computingDetection = false;
@@ -149,7 +146,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
     @Override
     public void onPreviewSizeChosen(final Size size, final int rotation) {
-        handler.sendEmptyMessage(0);
         final float textSizePx =
                 TypedValue.applyDimension(
                         TypedValue.COMPLEX_UNIT_DIP, TEXT_SIZE_DIP, getResources().getDisplayMetrics());
@@ -204,15 +200,12 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         cropToFrameTransform = new Matrix();
         frameToCropTransform.invert(cropToFrameTransform);
 
-        trackingOverlay = (OverlayView) findViewById(R.id.tracking_overlay);
+        trackingOverlay = findViewById(R.id.tracking_overlay);
         trackingOverlay.addCallback(
-                new DrawCallback() {
-                    @Override
-                    public void drawCallback(final Canvas canvas) {
-                        tracker.draw(canvas);
-                        if (isDebug()) {
-                            tracker.drawDebug(canvas);
-                        }
+                canvas -> {
+                    tracker.draw(canvas);
+                    if (isDebug()) {
+                        tracker.drawDebug(canvas);
                     }
                 });
 
@@ -244,118 +237,103 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
             ImageUtils.saveBitmap(croppedBitmap);
         }
 
-        runInBackground(
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        LOGGER.i("Running detection on image " + currTimestamp);
-                        final long startTime = SystemClock.uptimeMillis();
-                        final Classifier.Recognition result = detector.recognizeImage(croppedBitmap);
+        runInBackground(() -> {
+            LOGGER.i("Running detection on image " + currTimestamp);
+            final long startTime = SystemClock.uptimeMillis();
+            final Classifier.Recognition result = detector.recognizeImage(croppedBitmap);
 
-                        cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
-                        final Canvas canvas = new Canvas(cropCopyBitmap);
-                        final Paint paint = new Paint();
-                        paint.setColor(Color.RED);
-                        paint.setStyle(Style.STROKE);
-                        paint.setStrokeWidth(2.0f);
+            cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
+            final Canvas canvas1 = new Canvas(cropCopyBitmap);
+            final Paint paint = new Paint();
+            paint.setColor(Color.RED);
+            paint.setStyle(Style.STROKE);
+            paint.setStrokeWidth(2.0f);
 
-                        float minimumConfidence = MINIMUM_CONFIDENCE_TF_OD_API;
-                        switch (MODE) {
-                            case TF_OD_API:
-                                minimumConfidence = MINIMUM_CONFIDENCE_TF_OD_API;
-                                break;
-                        }
+            float minimumConfidence = MINIMUM_CONFIDENCE_TF_OD_API;
 
-                        final List<Classifier.Recognition> mappedRecognitions =
-                                new LinkedList<Classifier.Recognition>();
+            final List<Classifier.Recognition> mappedRecognitions =
+                    new LinkedList<>();
 
-                        final RectF location = result.getLocation();
-                        if (location != null && result.getConfidence() >= minimumConfidence) {
-                            canvas.drawRect(location, paint);
+            final RectF location = result.getLocation();
+            if (location != null && result.getConfidence() >= minimumConfidence) {
+                canvas1.drawRect(location, paint);
 
-                            cropToFrameTransform.mapRect(location);
+                cropToFrameTransform.mapRect(location);
 
-                            result.setLocation(location);
-                            mappedRecognitions.add(result);
-                            float left = result.getLocation().left;
-                            float top = result.getLocation().top;
-                            float right = result.getLocation().right;
-                            float bottom = result.getLocation().bottom;
-                            try {
-                                rgbFrameBitmap.createBitmap(rgbFrameBitmap, (int) left, (int) top, (int) (right - left), (int) (bottom - top));
-                            } catch (IllegalArgumentException e) {
-                                e.printStackTrace();
-                                LOGGER.e(e, "IllegalArgumentException");
-                            }
-                        }
+                result.setLocation(location);
+                mappedRecognitions.add(result);
+                float left = result.getLocation().left;
+                float top = result.getLocation().top;
+                float right = result.getLocation().right;
+                float bottom = result.getLocation().bottom;
+                try {
+                    Bitmap.createBitmap(rgbFrameBitmap, (int) left, (int) top, (int) (right - left), (int) (bottom - top));
+                } catch (IllegalArgumentException e) {
+                    e.printStackTrace();
+                    LOGGER.e(e, "IllegalArgumentException");
+                }
+            }
 
-                        tracker.trackResults(mappedRecognitions, currTimestamp);
-                        trackingOverlay.postInvalidate();
+            tracker.trackResults(mappedRecognitions, currTimestamp);
+            trackingOverlay.postInvalidate();
 
-                        computingDetection = false;
+            computingDetection = false;
 
-                        if (location != null && result.getConfidence() >= minimumConfidence && classifier != null) {
-                            Canvas canvas2 = new Canvas(rgbFrameBitmap);
-                            Paint paint2 = new Paint();
-                            ColorMatrix colorMatrix = new ColorMatrix();
-                            colorMatrix.setSaturation(0);
-                            ColorMatrixColorFilter colorMatrixFilter = new ColorMatrixColorFilter(colorMatrix);
-                            paint2.setColorFilter(colorMatrixFilter);
-                            canvas2.drawBitmap(rgbFrameBitmap, 0, 0, paint2);
-                            rgbFrameBitmap.setPixels(getRgbBytes(), 0, previewWidth, 0, 0, 224, 224);
-                            final List<Classifier2.Recognition> results =
-                                    classifier.recognizeImage(rgbFrameBitmap, sensorOrientation);
-                            LOGGER.v("Detect: %s", results);
+            if (location != null && result.getConfidence() >= minimumConfidence && classifier != null) {
+                storageBitmap = rgbFrameBitmap;
+                Canvas canvas2 = new Canvas(rgbFrameBitmap);
+                Paint paint2 = new Paint();
+                ColorMatrix colorMatrix = new ColorMatrix();
+                colorMatrix.setSaturation(0);
+                ColorMatrixColorFilter colorMatrixFilter = new ColorMatrixColorFilter(colorMatrix);
+                paint2.setColorFilter(colorMatrixFilter);
+                canvas2.drawBitmap(rgbFrameBitmap, 0, 0, paint2);
+                rgbFrameBitmap.setPixels(getRgbBytes(), 0, previewWidth, 0, 0, 224, 224);
+                final List<Classifier2.Recognition> results =
+                        classifier.recognizeImage(rgbFrameBitmap, sensorOrientation);
+                LOGGER.v("Detect: %s", results);
 
-                            not_count = 0;
-                            if (results.get(0).toString().contains("Cry")) {
-                                crying_count++;
-                                total_count++;
-                            } else {
-                                total_count++;
-                            }
+                not_count = 0;
+                if (results.get(0).toString().contains("Cry")) {
+                    crying_count++;
+                    total_count++;
+                } else {
+                    total_count++;
+                }
 
-                            lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
-                            LOGGER.d("Processing Time : " + lastProcessingTimeMs);
+                lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
+                LOGGER.d("Processing Time : " + lastProcessingTimeMs);
 
-                            runOnUiThread(
-                                    new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            showResultsInBottomSheet(results);
-                                            showInference(lastProcessingTimeMs + "ms");
-                                            showDB("-dB");
-                                        }
-                                    });
-                        } else {//디텍팅이 안됐을 경우
-                            LOGGER.d("Can't Detecting face, Sensor value : " + sensorValue);
-                            if (sensorValue <= MINIMUM_LIGHT_SENSOR_VALUE) {
-                                double db = getNoiseLevel();
-                                runOnUiThread(
-                                        new Runnable() {
-                                            @Override
-                                            public void run() {
-                                                showInference("-ms");
-                                                showDB((int) db + "dB");
-                                            }
-                                        });
-                                //80데시벨 보다 높은 값이 측정 됐을 때
-                                if (db >= MINIMUM_DB) {
-                                    LOGGER.d("Noise >= " + MINIMUM_DB + "dB");
-                                    pushAll("BFER", "Noise appeared!!");
-                                }
-                            } else {
-                                //뒷통수 및 얼굴감지 안된 거 푸쉬
-                                not_count++;
-                                LOGGER.d("Not Count : " + not_count);
-                                if (not_count > 10) {
-                                    pushAll("BFER", "Can't find face");
-                                    not_count = 0;
-                                }
-                            }
-                        }
-                    }
+                runOnUiThread(() -> {
+                    showResultsInBottomSheet(results);
+                    showInference(lastProcessingTimeMs + "ms");
+                    showDB("-dB");
                 });
+            } else {// 디텍팅이 안됐을 경우
+                storageUri = null;
+                LOGGER.d("Can't Detecting face, Sensor value : " + sensorValue);
+                if (sensorValue <= MINIMUM_LIGHT_SENSOR_VALUE) {
+                    double db = getNoiseLevel();
+                    runOnUiThread(() -> {
+                        showInference("-ms");
+                        showDB((int) db + "dB");
+                    });
+                    // MINIMUM_DB 데시벨 보다 높은 값이 측정 됐을 때
+                    if (db >= MINIMUM_DB) {
+                        LOGGER.d("Noise >= " + MINIMUM_DB + "dB");
+                        pushAll("BFER", "Noise appeared!!");
+                    }
+                } else {
+                    // 뒷통수 및 얼굴감지 안된 거 푸쉬
+                    not_count++;
+                    LOGGER.d("Not Count : " + not_count);
+                    if (not_count > 10) {
+                        pushAll("BFER", "Can't find face");
+                        not_count = 0;
+                    }
+                }
+            }
+        });
     }
 
     protected void stoImage() {
@@ -432,7 +410,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         AudioRecord recorder = new AudioRecord(MediaRecorder.AudioSource.MIC,
                 44100, AudioFormat.CHANNEL_IN_DEFAULT, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
 
-        short data[] = new short[bufferSize];
+        short[] data = new short[bufferSize];
         double average = 0.0;
         recorder.startRecording();
         //recording data;
@@ -502,11 +480,5 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
 
-    }
-
-    // Which detection model to use: by default uses Tensorflow Object Detection API frozen
-    // checkpoints.
-    private enum DetectorMode {
-        TF_OD_API;
     }
 }
