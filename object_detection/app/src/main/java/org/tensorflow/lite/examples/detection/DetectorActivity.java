@@ -92,25 +92,10 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private static final boolean SAVE_PREVIEW_BITMAP = false;
     private static final float TEXT_SIZE_DIP = 10;
     public static double REFERENCE = 0.00002;
+    public Handler handlerc = null;
     OverlayView trackingOverlay;
     private int total_count = 0;
     private int crying_count = 0;
-    @SuppressLint("HandlerLeak")
-    public Handler handler = new Handler() {
-        public void handleMessage(Message msg) {
-            super.handleMessage(msg);
-            LOGGER.d("Total Count : " + total_count);
-            LOGGER.d("Crying Count : " + crying_count);
-            if (total_count != 0 && total_count > 20) {
-                if (total_count - 1 <= crying_count) {
-                    pushAll("BFER", "Baby is Crying!!");
-                }
-                total_count = 0;
-                crying_count = 0;
-            }
-            this.sendEmptyMessageDelayed(0, REPEAT_DELAY);        // REPEAT_DELAY 간격으로 계속해서 반복하게 만들어준다
-        }
-    };
     private int not_count = 0;
     private String detect_image = "/detect.jpg";
     private Integer sensorOrientation;
@@ -130,6 +115,37 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private MultiBoxTracker tracker;
     private BorderedText borderedText;
     private float sensorValue;
+
+    @SuppressLint("HandlerLeak")
+    @Override
+    public synchronized void onResume() {
+        LOGGER.d("onResume " + this);
+        super.onResume();
+        handlerc = new Handler() {
+            public void handleMessage(Message msg) {
+                super.handleMessage(msg);
+                LOGGER.d("Total Count : " + total_count);
+                LOGGER.d("Crying Count : " + crying_count);
+                if (total_count != 0 && total_count > 15) {
+                    if (total_count - 1 <= crying_count) {
+                        stoImage();
+//                    pushAll("BFER", "Baby is Crying!!");
+                    }
+                    total_count = 0;
+                    crying_count = 0;
+                }
+                this.sendEmptyMessageDelayed(0, REPEAT_DELAY);
+            }
+        };
+        handlerc.sendEmptyMessage(0);
+    }
+
+    @Override
+    public synchronized void onPause() {
+        LOGGER.d("onPause " + this);
+        super.onPause();
+        handlerc.removeMessages(0);
+    }
 
     @Override
     public void onPreviewSizeChosen(final Size size, final int rotation) {
