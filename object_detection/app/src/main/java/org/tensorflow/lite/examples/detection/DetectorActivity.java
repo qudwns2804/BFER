@@ -64,7 +64,7 @@ import java.util.List;
  * objects.
  */
 public class DetectorActivity extends CameraActivity implements OnImageAvailableListener {
-    public final static int REPEAT_DELAY = 10000;
+    public final static int REPEAT_DELAY = 5000;
     private static final Logger LOGGER = new Logger();
     // Configuration values for the prepackaged SSD model.
     private static final int TF_OD_API_INPUT_SIZE = 512;
