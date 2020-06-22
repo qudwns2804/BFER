@@ -36,6 +36,7 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.ImageReader.OnImageAvailableListener;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
@@ -45,6 +46,11 @@ import android.widget.Toast;
 
 import androidx.core.app.ActivityCompat;
 
+import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.StorageReference;
+import com.google.firebase.storage.UploadTask;
+
+import org.json.JSONObject;
 import org.tensorflow.lite.examples.detection.customview.OverlayView;
 import org.tensorflow.lite.examples.detection.customview.OverlayView.DrawCallback;
 import org.tensorflow.lite.examples.detection.env.BorderedText;
@@ -55,7 +61,12 @@ import org.tensorflow.lite.examples.detection.tflite.Classifier2;
 import org.tensorflow.lite.examples.detection.tflite.TFLiteObjectDetectionAPIModel;
 import org.tensorflow.lite.examples.detection.tracking.MultiBoxTracker;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -101,6 +112,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         }
     };
     private int not_count = 0;
+    private String detect_image = "/detect.jpg";
     private Integer sensorOrientation;
     private Classifier detector;
     private Classifier2 classifier;
@@ -109,6 +121,8 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private Bitmap croppedBitmap = null;
     private Bitmap cropCopyBitmap = null;
     private boolean chk = true;
+    private Bitmap storageBitmap = null;
+    private Uri storageUri = null;
     private boolean computingDetection = false;
     private long timestamp = 0;
     private Matrix frameToCropTransform;
@@ -326,6 +340,68 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                         }
                     }
                 });
+    }
+
+    protected void stoImage() {
+        FirebaseStorage storage = FirebaseStorage.getInstance(getString(R.string.fcm_image_url));
+        StorageReference storageRef = storage.getReference();
+        StorageReference mountainImagesRef = storageRef.child(id + detect_image);
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        storageBitmap.compress(Bitmap.CompressFormat.JPEG, 100, baos);
+        byte[] data = baos.toByteArray();
+
+        UploadTask uploadTask = mountainImagesRef.putBytes(data);
+        uploadTask.addOnFailureListener(exception -> {
+            // Handle unsuccessful uploads
+            storageUri = null;
+        }).addOnSuccessListener(taskSnapshot -> {
+            // taskSnapshot.getMetadata() contains file metadata such as size, content-type, etc.
+            // ...
+            storageRef.child(id + detect_image).getDownloadUrl().addOnSuccessListener(uri -> {
+                // Got the download URL for 'users/me/profile.png'
+                storageUri = uri;
+                pushAll("BFER", "Baby is Crying!!");
+            }).addOnFailureListener(exception -> {
+                // Handle any errors
+                storageUri = null;
+            });
+
+            LOGGER.d("Storage URI : " + storageUri);
+        });
+    }
+
+    protected void sendPostToFCM(final String token, final String title, final String message) {
+        db.collection("users")
+                .document(id).addSnapshotListener((documentSnapshot, e) -> new Thread(() -> {
+            try {
+                // FCM 메시지 생성 start
+                JSONObject root = new JSONObject();
+                JSONObject notification = new JSONObject();
+                notification.put("body", message);
+                notification.put("title", title);
+                notification.put("image", storageUri);
+                root.put("notification", notification);
+                root.put("to", token);
+                // FCM 메시지 생성 end
+                LOGGER.d("JSON request : " + root.toString());
+
+                URL Url = new URL(FCM_MESSAGE_URL);
+                HttpURLConnection conn = (HttpURLConnection) Url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.setDoInput(true);
+                conn.addRequestProperty("Authorization", "key=" + SERVER_KEY);
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setRequestProperty("Content-type", "application/json");
+                OutputStream os = conn.getOutputStream();
+                os.write(root.toString().getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                conn.getResponseCode();
+            } catch (Exception e1) {
+                e1.printStackTrace();
+            }
+        }).start());
     }
 
     public double getNoiseLevel() {

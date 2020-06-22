@@ -5,6 +5,8 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -15,6 +17,9 @@ import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
 import org.tensorflow.lite.examples.detection.env.Logger;
+
+import java.io.IOException;
+import java.net.URL;
 
 public class HIFirebaseMessagingService extends FirebaseMessagingService {
     private static final Logger LOGGER = new Logger();
@@ -31,7 +36,17 @@ public class HIFirebaseMessagingService extends FirebaseMessagingService {
             LOGGER.d("FCM Notification Message : " + remoteMsg.getNotification().getBody());
             String msgBody = remoteMsg.getNotification().getBody();
             String msgTitle = remoteMsg.getNotification().getTitle();
-            String img = remoteMsg.getData().get("image");
+            Bitmap bitmap = null;
+            try {
+                LOGGER.d("FCM Image URL : " + remoteMsg.getNotification().getImageUrl());
+                if (remoteMsg.getNotification().getImageUrl() != null) {
+                    URL img = new URL(remoteMsg.getNotification().getImageUrl().toString());
+                    bitmap = BitmapFactory.decodeStream(img.openConnection().getInputStream());
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+                LOGGER.d("FCM Image Exception : " + e);
+            }
 
             Intent intent = new Intent(this, DetectorActivity.class);
             PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_ONE_SHOT);
@@ -46,6 +61,10 @@ public class HIFirebaseMessagingService extends FirebaseMessagingService {
                             .setAutoCancel(true)
                             .setSound(defaultSoundUri)
                             .setContentIntent(pendingIntent);
+
+            if (bitmap != null) {
+                notiBuilder.setStyle(new NotificationCompat.BigPictureStyle().bigPicture(bitmap));
+            }
 
             NotificationManager notiManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
