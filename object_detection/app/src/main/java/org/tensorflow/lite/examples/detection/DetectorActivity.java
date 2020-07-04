@@ -75,6 +75,7 @@ import java.util.List;
  */
 public class DetectorActivity extends CameraActivity implements OnImageAvailableListener {
     public final static int REPEAT_DELAY = 5000;
+    public final static int NOISE_REPEAT_DELAY = 10000;
     private static final Logger LOGGER = new Logger();
     // Configuration values for the prepackaged SSD model.
     private static final int TF_OD_API_INPUT_SIZE = 512;
@@ -91,6 +92,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private static final float TEXT_SIZE_DIP = 10;
     public static double REFERENCE = 0.00002;
     public Handler handlerc = null;
+    public Handler noiseHandler = null;
     OverlayView trackingOverlay;
     private int total_count = 0;
     private int crying_count = 0;
@@ -126,7 +128,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                 if (total_count != 0 && total_count > 15) {
                     if (total_count - 1 <= crying_count) {
                         stoImage();
-//                    pushAll("BFER", "Baby is Crying!!");
                     }
                     total_count = 0;
                     crying_count = 0;
@@ -135,6 +136,15 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
             }
         };
         handlerc.sendEmptyMessage(0);
+
+        noiseHandler = new Handler() {
+            public void handleMessage(Message msg) {
+                super.handleMessage(msg);
+                fireNoise();
+                this.sendEmptyMessageDelayed(0, NOISE_REPEAT_DELAY);
+            }
+        };
+        noiseHandler.sendEmptyMessage(0);
     }
 
     @Override
@@ -142,6 +152,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         LOGGER.d("onPause " + this);
         super.onPause();
         handlerc.removeMessages(0);
+        noiseHandler.removeMessages(0);
     }
 
     @Override
@@ -304,11 +315,24 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                 lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
                 LOGGER.d("Processing Time : " + lastProcessingTimeMs);
 
-                runOnUiThread(() -> {
-                    showResultsInBottomSheet(results);
-                    showInference(lastProcessingTimeMs + "ms");
-                    showDB("-dB");
-                });
+                if (noise) {
+                    double db = getNoiseLevel();
+                    runOnUiThread(() -> {
+                        showResultsInBottomSheet(results);
+                        showInference(lastProcessingTimeMs + "ms");
+                        showDB((int) db + "dB");
+                    });
+                    if (db >= MINIMUM_DB) {
+                        LOGGER.d("Noise >= " + MINIMUM_DB + "dB");
+                        pushAll("BFER", "Noise appeared!!");
+                    }
+                } else {
+                    runOnUiThread(() -> {
+                        showResultsInBottomSheet(results);
+                        showInference(lastProcessingTimeMs + "ms");
+                        showDB("-dB");
+                    });
+                }
             } else {// 디텍팅이 안됐을 경우
                 storageUri = null;
                 LOGGER.d("Can't Detecting face, Sensor value : " + sensorValue);

@@ -43,6 +43,7 @@ import android.view.Surface;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
+import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -52,6 +53,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -69,7 +71,9 @@ import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.iid.FirebaseInstanceId;
 
 import org.json.JSONObject;
@@ -112,14 +116,16 @@ public abstract class CameraActivity extends AppCompatActivity
             recognitionValueTextView,
             recognition1ValueTextView,
             recognition2ValueTextView;
-    protected LinearLayout ll_result, ll_email;
+    protected LinearLayout ll_result, ll_email, ll_noise, ll_chk_noise;
     protected RelativeLayout rl_signIn;
     protected SignInButton btn_signIn;
     protected ImageButton btn_logout;
     protected TextView tv_email;
     protected TextView inferenceTimeTextView, dbTextView;
+    protected CheckBox cb_noise;
     protected ImageView bottomSheetArrowImageView;
     protected String token = null;
+    protected boolean noise = false;
     private boolean debug = false;
     private Handler handler;
     private HandlerThread handlerThread;
@@ -229,6 +235,9 @@ public abstract class CameraActivity extends AppCompatActivity
         ll_email = findViewById(R.id.ll_email);
         tv_email = findViewById(R.id.tv_email);
         btn_logout = findViewById(R.id.btn_logout);
+        ll_noise = findViewById(R.id.ll_noise);
+        ll_chk_noise = findViewById(R.id.ll_chk_noise);
+        cb_noise = findViewById(R.id.cb_noise);
 
         mAuth = FirebaseAuth.getInstance();
         db = FirebaseFirestore.getInstance();
@@ -236,19 +245,26 @@ public abstract class CameraActivity extends AppCompatActivity
             ll_result.setVisibility(View.VISIBLE);
             rl_signIn.setVisibility(View.GONE);
             ll_email.setVisibility(View.VISIBLE);
+            ll_noise.setVisibility(View.VISIBLE);
             id = mAuth.getCurrentUser().getEmail();
             tv_email.setText(id);
             getToken();
+            cb_noise.setChecked(noise);
         } else {
             ll_result.setVisibility(View.GONE);
             rl_signIn.setVisibility(View.VISIBLE);
             ll_email.setVisibility(View.GONE);
+            ll_noise.setVisibility(View.GONE);
+            noise = false;
+            cb_noise.setChecked(noise);
             token = null;
         }
 
         btn_signIn.setOnClickListener(view -> signIn());
 
         btn_logout.setOnClickListener(view -> logOut());
+
+        ll_chk_noise.setOnClickListener(view -> chkNoise());
 
         inferenceTimeTextView = findViewById(R.id.inference_info);
         dbTextView = findViewById(R.id.db_info);
@@ -270,6 +286,13 @@ public abstract class CameraActivity extends AppCompatActivity
         FirebaseAuth.getInstance().signOut();
         token = null;
         updateUI(null);
+    }
+
+    protected void chkNoise() {
+        noise = !noise;
+        deviceMap.put("noise", noise);
+        db.collection("users").document(id).update("noise", noise);
+        cb_noise.setChecked(noise);
     }
 
     protected void getToken() {
@@ -334,11 +357,13 @@ public abstract class CameraActivity extends AppCompatActivity
                     LOGGER.d("FireStore Document : " + deviceMap);
                     if (!deviceMap.containsKey(token)) {
                         deviceMap.put(token, true);
+                        deviceMap.put("noise", noise);
                         db.collection("users").document(id).set(deviceMap);
                     }
                 } else {
                     LOGGER.d("FireStore : Not exists Document");
                     deviceMap.put(token, true);
+                    deviceMap.put("noise", noise);
                     LOGGER.d("FireStore Document : " + deviceMap);
                     db.collection("users").document(id).set(deviceMap);
                 }
@@ -382,8 +407,33 @@ public abstract class CameraActivity extends AppCompatActivity
         Set<String> keys = deviceMap.keySet();
         for (String key : keys) {
             LOGGER.d("FCM TOKEN : " + key);
-            sendPostToFCM(key, title, message);
+            if (!key.contains("noise"))
+                sendPostToFCM(key, title, message);
         }
+    }
+
+    protected void fireNoise() {
+        final DocumentReference docRef = db.collection("users").document(id);
+        docRef.addSnapshotListener(new EventListener<DocumentSnapshot>() {
+            @Override
+            public void onEvent(@Nullable DocumentSnapshot snapshot,
+                                @Nullable FirebaseFirestoreException e) {
+                if (e != null) {
+                    LOGGER.w("FireNoise : Listen failed.", e);
+                    return;
+                }
+
+                if (snapshot != null && snapshot.exists()) {
+                    LOGGER.d("FireNoise : Current data: " + snapshot.getData());
+                    deviceMap = snapshot.getData();
+                    if (deviceMap.containsKey("noise"))
+                        noise = (boolean) deviceMap.get("noise");
+                    cb_noise.setChecked(noise);
+                } else {
+                    LOGGER.d("FireNoise : Current data: null");
+                }
+            }
+        });
     }
 
     protected void updateUI(FirebaseUser user) { //update ui code here
@@ -392,6 +442,8 @@ public abstract class CameraActivity extends AppCompatActivity
             ll_result.setVisibility(View.VISIBLE);
             rl_signIn.setVisibility(View.GONE);
             ll_email.setVisibility(View.VISIBLE);
+            ll_noise.setVisibility(View.VISIBLE);
+            cb_noise.setChecked(noise);
             id = mAuth.getCurrentUser().getEmail();
             tv_email.setText(id);
             getToken();
@@ -399,6 +451,9 @@ public abstract class CameraActivity extends AppCompatActivity
             ll_result.setVisibility(View.GONE);
             rl_signIn.setVisibility(View.VISIBLE);
             ll_email.setVisibility(View.GONE);
+            ll_noise.setVisibility(View.GONE);
+            noise = false;
+            cb_noise.setChecked(noise);
         }
     }
 
@@ -446,9 +501,9 @@ public abstract class CameraActivity extends AppCompatActivity
         imageConverter = () -> ImageUtils.convertYUV420SPToARGB8888(bytes, previewWidth, previewHeight, rgbBytes);
 
         postInferenceCallback = () -> {
-                    camera.addCallbackBuffer(bytes);
-                    isProcessingFrame = false;
-                };
+            camera.addCallbackBuffer(bytes);
+            isProcessingFrame = false;
+        };
         processImage();
     }
 
@@ -484,20 +539,20 @@ public abstract class CameraActivity extends AppCompatActivity
             final int uvPixelStride = planes[1].getPixelStride();
 
             imageConverter = () -> ImageUtils.convertYUV420ToARGB8888(
-                            yuvBytes[0],
-                            yuvBytes[1],
-                            yuvBytes[2],
-                            previewWidth,
-                            previewHeight,
-                            yRowStride,
-                            uvRowStride,
-                            uvPixelStride,
-                            rgbBytes);
+                    yuvBytes[0],
+                    yuvBytes[1],
+                    yuvBytes[2],
+                    previewWidth,
+                    previewHeight,
+                    yRowStride,
+                    uvRowStride,
+                    uvPixelStride,
+                    rgbBytes);
 
             postInferenceCallback = () -> {
-                        image.close();
-                        isProcessingFrame = false;
-                    };
+                image.close();
+                isProcessingFrame = false;
+            };
 
             processImage();
         } catch (final Exception e) {
